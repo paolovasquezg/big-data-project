@@ -1,2 +1,1 @@
-# big-data-project
-Project: Big Data
+# Project: Big Data
