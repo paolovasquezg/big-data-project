@@ -11,7 +11,9 @@ from utils_bigdata import (
     procesar_dia,
     procesar_metricas,
     upload_outputs_to_gcs,
+    upload_to_mongodb
 )
+
 
 DEFAULT_ARGS = {
     "owner": "isaac",
@@ -61,4 +63,12 @@ with DAG(
         },
     )
 
-    t1_procesar_dia >> t2_metricas >> t3_upload_gcs
+    t4_mongo = PythonOperator(
+        task_id="upload_to_mongodb",
+        python_callable=upload_to_mongodb,
+        op_kwargs={
+            "fecha_input": fecha_template,
+        },
+    )
+
+    t1_procesar_dia >> t2_metricas >> t3_upload_gcs >> t4_mongo
