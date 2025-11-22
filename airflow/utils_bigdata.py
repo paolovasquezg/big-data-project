@@ -618,12 +618,13 @@ def upload_outputs_to_gcs(fecha: str, bucket_name: str):
 
 def calcular_kpis_global():
     """
-    Calcula KPIs globales (no por fecha), igual que el notebook mongo_crud.ipynb
-    Los KPIs se basan en las colecciones:
+    Calcula KPIs globales basados en:
     - dias
     - registros
     - metricas
-    Y se guardan en la colección 'kpis' (un solo documento).
+
+    Inserta un único documento en la colección 'kpis' con nombres corregidos
+    que reflejan que los cálculos provienen de muestras.
     """
 
     print("\n📊 Calculando KPIs globales desde MongoDB...")
@@ -649,62 +650,94 @@ def calcular_kpis_global():
     metricas = db["metricas"]
     kpis = db["kpis"]
 
-    # Limpiar documento previo (si existe)
+    # Limpiar documento previo
     try:
         kpis.delete_many({})
     except:
         pass
 
-    # ================================
-    # KPI 1: promedio de actividad por día
-    # ================================
+    # ======================================================
+    # 1️⃣ KPI: actividad real por día
+    # ======================================================
     try:
         actividad_dia_pipeline = [
-            {"$group": {"_id": None, "prom_actividad_por_dia": {"$avg": "$cantidad_regs"}}}
+            {"$group": {"_id": None, "prom_actividad_real_por_dia": {"$avg": "$cantidad_regs"}}}
         ]
-        actividad_dia = list(dias.aggregate(actividad_dia_pipeline))[0]["prom_actividad_por_dia"]
+        actividad_real_por_dia = list(dias.aggregate(actividad_dia_pipeline))[0]["prom_actividad_real_por_dia"]
     except:
-        actividad_dia = None
+        actividad_real_por_dia = None
 
-    # ================================
-    # KPI 2: promedio de commits por día
-    # ================================
+    # ======================================================
+    # 2️⃣ KPI: commits por día (basado en muestra)
+    # ======================================================
     try:
         commits_dia_pipeline = [
-            {"$group": {"_id": "$fecha", "sum_commits": {"$sum": "$n_commits"}}},
-            {"$group": {"_id": None, "prom_commits_por_dia": {"$avg": "$sum_commits"}}},
+            {"$group": {"_id": "$fecha", "total_commits": {"$sum": "$n_commits"}}},
+            {"$group": {"_id": None, "prom_commits_muestra_por_dia": {"$avg": "$total_commits"}}}
         ]
-        commits_dia = list(registros.aggregate(commits_dia_pipeline))[0]["prom_commits_por_dia"]
+        commits_muestra_por_dia = list(registros.aggregate(commits_dia_pipeline))[0]["prom_commits_muestra_por_dia"]
     except:
-        commits_dia = None
+        commits_muestra_por_dia = None
 
-    # ================================
-    # KPI 3: promedio de commits por hora
-    # ================================
+    # ======================================================
+    # 3️⃣ KPI: commits por hora (múltiple nivel)
+    # ======================================================
     try:
         commits_hora_pipeline = [
-            {"$group": {"_id": "$hora", "prom_commits_por_hora": {"$avg": "$n_commits"}}},
-            {"$group": {"_id": None, "promedio": {"$avg": "$prom_commits_por_hora"}}}
+            {
+                "$group": {
+                    "_id": {"fecha": "$fecha", "hora": "$hora"},
+                    "commits_por_hora_en_dia": {"$sum": "$n_commits"}
+                }
+            },
+            {
+                "$group": {
+                    "_id": "$_id.fecha",
+                    "promedio_commits_por_hora_del_dia": {"$avg": "$commits_por_hora_en_dia"}
+                }
+            },
+            {
+                "$group": {
+                    "_id": None,
+                    "prom_commits_muestra_por_hora": {"$avg": "$promedio_commits_por_hora_del_dia"}
+                }
+            }
         ]
-        commits_hora = list(registros.aggregate(commits_hora_pipeline))[0]["promedio"]
+        commits_muestra_por_hora = list(registros.aggregate(commits_hora_pipeline))[0]["prom_commits_muestra_por_hora"]
     except:
-        commits_hora = None
+        commits_muestra_por_hora = None
 
-    # ================================
-    # KPI 4: promedio de tamaño push por hora
-    # ================================
+    # ======================================================
+    # 4️⃣ KPI: tamaño push por hora (múltiple nivel)
+    # ======================================================
     try:
-        tamano_push_hora_pipeline = [
-            {"$group": {"_id": "$hora", "prom": {"$avg": "$tamano_push"}}},
-            {"$group": {"_id": None, "prom_tamano_push_por_hora": {"$avg": "$prom"}}}
+        push_hora_pipeline = [
+            {
+                "$group": {
+                    "_id": {"fecha": "$fecha", "hora": "$hora"},
+                    "push_por_hora_en_dia": {"$sum": "$tamano_push"}
+                }
+            },
+            {
+                "$group": {
+                    "_id": "$_id.fecha",
+                    "promedio_push_por_hora_del_dia": {"$avg": "$push_por_hora_en_dia"}
+                }
+            },
+            {
+                "$group": {
+                    "_id": None,
+                    "prom_tamano_push_muestra_por_hora": {"$avg": "$promedio_push_por_hora_del_dia"}
+                }
+            }
         ]
-        tamano_push_hora = list(registros.aggregate(tamano_push_hora_pipeline))[0]["prom_tamano_push_por_hora"]
+        push_muestra_por_hora = list(registros.aggregate(push_hora_pipeline))[0]["prom_tamano_push_muestra_por_hora"]
     except:
-        tamano_push_hora = None
+        push_muestra_por_hora = None
 
-    # ================================
-    # KPI 5: actor más recurrente
-    # ================================
+    # ======================================================
+    # 5️⃣ KPI: actor más recurrente (muestra)
+    # ======================================================
     try:
         actor_rec_pipeline = [
             {"$group": {"_id": "$actor_login", "count": {"$sum": 1}}},
@@ -715,9 +748,9 @@ def calcular_kpis_global():
     except:
         actor_mas_rec = None
 
-    # ================================
-    # KPI 6: evento más recurrente
-    # ================================
+    # ======================================================
+    # 6️⃣ KPI: evento más recurrente (muestra)
+    # ======================================================
     try:
         evento_rec_pipeline = [
             {"$group": {"_id": "$type", "count": {"$sum": 1}}},
@@ -728,29 +761,33 @@ def calcular_kpis_global():
     except:
         evento_mas_rec = None
 
-    # ================================
-    # KPI 7: promedio tamaño push por día
-    # ================================
+    # ======================================================
+    # 7️⃣ KPI: tamaño push por día (muestra)
+    # ======================================================
     try:
-        tamano_push_dia_pipeline = [
-            {"$group": {"_id": "$fecha", "sum_push": {"$sum": "$tamano_push"}}},
-            {"$group": {"_id": None, "prom_tamano_push_dia": {"$avg": "$sum_push"}}}
+        push_dia_pipeline = [
+            {"$group": {"_id": "$fecha", "total_push": {"$sum": "$tamano_push"}}},
+            {"$group": {"_id": None, "prom_tamano_push_muestra_por_dia": {"$avg": "$total_push"}}}
         ]
-        tamano_push_dia = list(registros.aggregate(tamano_push_dia_pipeline))[0]["prom_tamano_push_dia"]
+        push_muestra_por_dia = list(registros.aggregate(push_dia_pipeline))[0]["prom_tamano_push_muestra_por_dia"]
     except:
-        tamano_push_dia = None
+        push_muestra_por_dia = None
 
-    # ================================
-    # COMPILAR DOCUMENTO FINAL (como notebook)
-    # ================================
+    # ======================================================
+    # 📦 COMPILAR DOCUMENTO FINAL
+    # ======================================================
+
     kpis_insert = {
-        "prom_actividad_por_dia": actividad_dia,
-        "prom_commits_por_hora": commits_hora,
-        "prom_tamano_push_por_hora": tamano_push_hora,
-        "actor_mas_recurrente": actor_mas_rec,
-        "evento_mas_recurrente": evento_mas_rec,
-        "prom_tamano_push_dia": tamano_push_dia,
-        "prom_commits_por_dia": commits_dia
+        "prom_actividad_real_por_dia": actividad_real_por_dia,
+
+        "prom_commits_muestra_por_dia": commits_muestra_por_dia,
+        "prom_commits_muestra_por_hora": commits_muestra_por_hora,
+
+        "prom_tamano_push_muestra_por_hora": push_muestra_por_hora,
+        "prom_tamano_push_muestra_por_dia": push_muestra_por_dia,
+
+        "actor_mas_recurrente_muestra": actor_mas_rec,
+        "evento_mas_recurrente_muestra": evento_mas_rec
     }
 
     kpis.insert_one(kpis_insert)
@@ -759,3 +796,4 @@ def calcular_kpis_global():
     client.close()
 
     return "kpis_globales"
+
