@@ -38,6 +38,7 @@ def extraer_detalles(payload, tipo):
     if tipo == "PushEvent":
         detalles["branch"] = payload_dict.get("ref", "").split("/")[-1]
         detalles["tamano_push"] = payload_dict.get("size", 0)
+        
     elif tipo in ["PullRequestEvent", "IssuesEvent"]:
         detalles["action"] = payload_dict.get("action")
     return detalles
@@ -57,13 +58,15 @@ def procesar_dia(fecha_input):
     fecha_str = fecha.strftime("%Y-%m-%d")
     dia_nombre = fecha.strftime("%A").capitalize()
 
-    print(f"\n📅 Procesando {fecha_str}")
+    print(f"\n📅 Procesando {fecha_str}...\n")
 
     dfs_horas = []
-    muestras_total = []
+    muestras_total = []   # <--- NUEVO: acumulador de muestras por hora
     archivos_ok = 0
 
     for hora in HORAS:
+        # En la URL de GH Archive las horas 0-9 aparecen sin cero a la izquierda (p.ej. '-0.json.gz')
+        # pero al guardar localmente preferimos usar dos dígitos para ordenar los ficheros ('-00.json.gz').
         url = f"https://data.gharchive.org/{fecha_str}-{hora}.json.gz"
         file_path = f"{fecha_str}-{hora:02d}.json.gz"
 
@@ -99,6 +102,7 @@ def procesar_dia(fecha_input):
                 detalles = df_m.apply(lambda x: extraer_detalles(x['payload'], x['type']), axis=1)
                 df_m['branch'] = detalles.apply(lambda x: x.get("branch"))
                 df_m['tamano_push'] = detalles.apply(lambda x: x.get("tamano_push"))
+                df_m['tamano_push'] = df_m['tamano_push'].fillna(0)  # <--- esta línea
                 df_m['action'] = detalles.apply(lambda x: x.get("action"))
                 df_m['n_commits'] = df_m.apply(
                     lambda x: contar_commits(x['payload']) if x['type'] == 'PushEvent' else 0,
@@ -135,7 +139,7 @@ def procesar_dia(fecha_input):
 
     df_dia = pd.concat(dfs_horas, ignore_index=True)
 
- 
+
     # ---------------------------------------------------------
     # PROCESAMIENTO
     # ---------------------------------------------------------
@@ -149,6 +153,8 @@ def procesar_dia(fecha_input):
     detalles = df_dia.apply(lambda x: extraer_detalles(x['payload'], x['type']), axis=1)
     df_dia['branch'] = detalles.apply(lambda x: x.get("branch"))
     df_dia['tamano_push'] = detalles.apply(lambda x: x.get("tamano_push"))
+    df_dia['tamano_push'] = df_dia['tamano_push'].fillna(0)
+
     df_dia['action'] = detalles.apply(lambda x: x.get("action"))
     df_dia['n_commits'] = df_dia.apply(
         lambda x: contar_commits(x['payload']) if x['type'] == 'PushEvent' else 0,
