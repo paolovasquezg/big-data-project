@@ -26,7 +26,7 @@ DEFAULT_ARGS = {
 }
 
 with DAG(
-    dag_id="gharchive_composer_v3",
+    dag_id="gharchive_composer_v2",
     default_args=DEFAULT_ARGS,
     description="Pipeline GHArchive con limpieza, muestras y mÃ©tricas",
     # schedule_interval="0 7 * * *",  # 07:00 UTC = 02:00 PerÃº
@@ -38,8 +38,8 @@ with DAG(
     tags=["bigdata", "gharchive"],
 ) as dag:
 
-    # DÃ­a a procesar: siempre el dÃ­a anterior
-    # fecha_template = "{{ macros.ds_add(ds) }}"
+    # Día a procesar: siempre el día anterior
+    # fecha_template = "{{ macros.ds_add(ds), -1 }}"
     fecha_template = "{{ ds }}"
 
     t1_procesar_dia = PythonOperator(

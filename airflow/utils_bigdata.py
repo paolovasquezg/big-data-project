@@ -22,12 +22,11 @@ def upload_to_mongodb(fecha_input: str):
     Tarea 4: Subir datos procesados a MongoDB Atlas
     
     Inserta en 3 colecciones:
-    - dias: Resumen del dÃ­a/hora procesada
+    - dias: Resumen del día/hora procesada
     - registros: Los 209 registros de muestra
-    - metricas: MÃ©tricas calculadas (acciÃ³n recurrente, actor, horas inactivas)
+    - metricas: Métricas calculadas (acción recurrente, actor, horas inactivas)
     """
     
-    # Normalizar fecha
     fecha = datetime.strptime(fecha_input, "%Y-%m-%d")
     fecha_str = fecha.strftime("%Y-%m-%d")
     data_dir = BASE_DATA_DIR
@@ -37,10 +36,9 @@ def upload_to_mongodb(fecha_input: str):
     metrics_path = os.path.join(data_dir, "metrics.json")
     
     if not os.path.exists(dias_path) or not os.path.exists(muestras_path):
-        print(f"âš ï¸ No se encontraron JSON globales en {data_dir}. Saltando subida a Mongo.")
+        print(f"⚠️ No se encontraron JSON globales en {data_dir}. Saltando subida a Mongo.")
         return
 
-    # Leer archivos globales y filtrar
     with open(dias_path, "r", encoding="utf-8") as f:
         lista_dias = json.load(f)
         gh_dias = next((d for d in lista_dias if d["fecha"] == fecha_str), None)
@@ -50,13 +48,13 @@ def upload_to_mongodb(fecha_input: str):
         registros_data = [m for m in todas_muestras if m.get("fecha") == fecha_str]
 
     if not gh_dias:
-        print(f"âš ï¸ No hay datos procesados para {fecha_str} en gh_dias.json")
+        print(f"⚠️ No hay datos procesados para {fecha_str} en gh_dias.json")
         return
 
-    # ConexiÃ³n a MongoDB
+    # Conexión a MongoDB
     MONGO_URI = "mongodb+srv://paolovasquezg:1234@bigdata2025.lhkp5ye.mongodb.net/?retryWrites=true&w=majority&tls=true"
     
-    print(f"\nðŸ’¾ Conectando a MongoDB...")
+    print("\n💾 Conectando a MongoDB...")
     
     try:
         client = MongoClient(
@@ -65,59 +63,50 @@ def upload_to_mongodb(fecha_input: str):
             serverSelectionTimeoutMS=5000
         )
         
-        # Verificar conexiÃ³n
         client.admin.command('ping')
-        print("âœ“ Conectado a MongoDB")
+        print("✓ Conectado a MongoDB")
         
-        # Seleccionar base de datos
         db = client['ProyectoBD']
         
-        print(f"\nðŸ“Š Subiendo a 3 colecciones...")
+        print("\n📘 Subiendo a 3 colecciones...")
         
-        # ============================================
-        # COLECCIÃ“N 1: DIAS (resumen)
-        # ============================================
+        # ------------------------------
+        # COLECCIÓN 1: dias
+        # ------------------------------
         col_dias = db['dias']
-        
-        # Upsert por fecha Ãºnicamente
         col_dias.update_one(
             {"fecha": fecha_str},
             {"$set": gh_dias},
             upsert=True
         )
-        print(f"âœ“ ColecciÃ³n 'dias': 1 documento insertado/actualizado")
+        print("✓ Colección 'dias': 1 documento insertado/actualizado")
         
-        
-        # ============================================
-        # COLECCIÃ“N 2: REGISTROS (muestras)
-        # ============================================
+        # ------------------------------
+        # COLECCIÓN 2: registros
+        # ------------------------------
         col_registros = db['registros']
-        
         inserted_count = 0
+        
         if len(registros_data) > 0:
-            # Borrar registros previos de esa fecha para evitar duplicados en re-runs
             col_registros.delete_many({"fecha": fecha_str})
-            
             result = col_registros.insert_many(registros_data, ordered=False)
             inserted_count = len(result.inserted_ids)
         
-        print(f"âœ“ ColecciÃ³n 'registros': {inserted_count} documentos insertados (limpieza previa realizada)")
+        print(f"✓ Colección 'registros': {inserted_count} documentos insertados")
         
-        
-        # ============================================
-        # COLECCIÃ“N 3: METRICAS (anÃ¡lisis)
-        # ============================================
+        # ------------------------------
+        # COLECCIÓN 3: metricas
+        # ------------------------------
         col_metricas = db['metricas']
         
         doc_metricas = {}
         if os.path.exists(metrics_path):
-             with open(metrics_path, "r", encoding="utf-8") as f:
+            with open(metrics_path, "r", encoding="utf-8") as f:
                 lista_metricas = json.load(f)
                 doc_metricas = next((m for m in lista_metricas if m.get("fecha") == fecha_str), {})
         
         if not doc_metricas:
-            # Fallback: calcular si no existe en archivo
-            print("âš ï¸ MÃ©tricas no encontradas en archivo, calculando al vuelo...")
+            print("⚠️ Métricas no encontradas, calculando al vuelo...")
             doc_metricas = {
                 "fecha": fecha_str,
                 "dia": gh_dias.get("dia"),
@@ -126,19 +115,17 @@ def upload_to_mongodb(fecha_input: str):
                 "actor_mas_recurrente": None
             }
 
-        # Upsert por fecha Ãºnicamente
         col_metricas.update_one(
             {"fecha": fecha_str},
             {"$set": doc_metricas},
             upsert=True
         )
-        print(f"âœ“ ColecciÃ³n 'metricas': 1 documento insertado/actualizado")
+        print("✓ Colección 'metricas': 1 documento insertado/actualizado")
         
-        
-        # ============================================
-        # CREAR ÃNDICES
-        # ============================================
-        print("\nðŸ“‘ Creando/verificando Ã­ndices...")
+        # ------------------------------
+        # Índices
+        # ------------------------------
+        print("\n📑 Creando/verificando índices...")
         
         col_dias.create_index([("fecha", 1)], unique=True, background=True)
         
@@ -149,27 +136,25 @@ def upload_to_mongodb(fecha_input: str):
         
         col_metricas.create_index([("fecha", 1)], unique=True, background=True)
         
-        print("âœ“ Ãndices creados/verificados")
+        print("✓ Índices creados/verificados")
         
-        
-        # ============================================
-        # RESUMEN
-        # ============================================
+        # ------------------------------
+        # Resumen
+        # ------------------------------
         print("\n" + "="*60)
-        print("ðŸ“Š RESUMEN DE CARGA A MONGODB")
+        print("📘 RESUMEN DE CARGA A MONGODB")
         print("="*60)
-        print(f"ColecciÃ³n 'dias':      1 documento")
-        print(f"ColecciÃ³n 'registros': {inserted_count} documentos")
-        print(f"ColecciÃ³n 'metricas':  1 documento")
+        print(f"Colección 'dias':      1 documento")
+        print(f"Colección 'registros': {inserted_count} documentos")
+        print(f"Colección 'metricas':  1 documento")
         print(f"Total insertado:       {inserted_count + 2} documentos")
         print("="*60)
         
         client.close()
         
     except Exception as e:
-        print(f"âœ— Error al subir a MongoDB: {e}")
-        # No hacemos raise para no fallar todo el DAG si solo falla Mongo (opcional)
-        # raise e
+        print(f"✖ Error al subir a MongoDB: {e}")
+        return
 
 # ============================================================
 # CONFIGURACIÃ“N GENERAL
@@ -196,22 +181,16 @@ except Exception:
 # HELPERS
 # ============================================================
 
-
-
-
 def descargar_archivo(url: str, destino: str, max_retries: int = 2) -> bool:
     """
-    Descarga robusta para GHArchive:
-    - Timeout moderado (conexiÃ³n, lectura)
-    - Pocos retries
-    - Si es 404, no insiste
+    Descarga robusta para GHArchive
     """
     headers = {"User-Agent": "Composer-GHArchive/1.0"}
 
     for intento in range(1, max_retries + 1):
         try:
-            print(f"ðŸ”½ Descargando ({intento}/{max_retries}): {url}")
-            # timeout=(connect_timeout, read_timeout)
+            print(f"🔍 Descargando ({intento}/{max_retries}): {url}")
+            
             r = requests.get(
                 url,
                 headers=headers,
@@ -224,24 +203,22 @@ def descargar_archivo(url: str, destino: str, max_retries: int = 2) -> bool:
                     for chunk in r.iter_content(chunk_size=8192):
                         if chunk:
                             f.write(chunk)
-                print(f"âœ… Descarga OK: {destino}")
+                print(f"✅ Descarga OK: {destino}")
                 return True
 
             if r.status_code == 404:
-                print(f"âš ï¸ 404 (no existe hour file): {url}")
+                print(f"⚠️ 404 (no existe hour file): {url}")
                 return False
 
-            print(f"âš ï¸ Status {r.status_code} para {url}, reintentando...")
+            print(f"⚠️ Status {r.status_code} para {url}, reintentando...")
 
         except Exception as e:
-            print(f"âŒ Error descargando {url} (intento {intento}): {e}")
+            print(f"❌ Error descargando {url} (intento {intento}): {e}")
 
-        # backoff cortito
         time.sleep(2 * intento + random.random())
 
-    print(f"ðŸ›‘ No se pudo descargar tras {max_retries} intentos: {url}")
+    print(f"🚫 No se pudo descargar tras {max_retries} intentos: {url}")
     return False
-
 
 def _procesar_evento(event: dict):
     """
@@ -291,8 +268,8 @@ def _procesar_evento(event: dict):
 
 def procesar_dia(fecha_input: str):
     """
-    Procesa un dÃ­a YYYY-MM-DD completo (0-23 UTC):
-    - Descarga las 24 horas del dÃ­a indicado.
+    Procesa un día YYYY-MM-DD completo (0-23 UTC):
+    - Descarga las 24 horas del día indicado.
     - Procesa cada archivo en streaming.
     - Elimina el archivo descargado para ahorrar espacio.
     - Genera gh_dias.json y gh_muestras.json
@@ -303,20 +280,18 @@ def procesar_dia(fecha_input: str):
     fecha_str = fecha.strftime("%Y-%m-%d")
     dia_nombre = fecha.strftime("%A").capitalize()
 
-    # Usamos BASE_DATA_DIR directamente (estructura plana)
     data_dir = BASE_DATA_DIR
     os.makedirs(data_dir, exist_ok=True)
 
-    print(f"\nðŸ“… Procesando dÃ­a completo {fecha_str} (0-23 UTC) en {data_dir}...\n")
+    print(f"\n📅 Procesando día completo {fecha_str} (0-23 UTC) en {data_dir}...\n")
 
     muestras_total = []
     archivos_ok = 0
     total_registros_dia = 0
     tipos_eventos_dia = set()
 
-    # Procesamos siempre las 24 horas (0 a 23)
+    # Procesamos siempre las 24 horas
     for hora in range(24):
-        # GHArchive URL: YYYY-MM-DD-{hora}.json.gz
         nombre_archivo = f"{fecha_str}-{hora}.json.gz"
         url = f"https://data.gharchive.org/{nombre_archivo}"
         file_path = os.path.join(data_dir, nombre_archivo)
@@ -327,12 +302,11 @@ def procesar_dia(fecha_input: str):
             if not ok:
                 continue
 
-        # Procesar en streaming
         registros_hora = 0
         tipos_eventos_hora = set()
         sample_hora = []
 
-        print(f"ðŸ•’ Procesando {nombre_archivo}...")
+        print(f"📂 Procesando {nombre_archivo}...")
 
         try:
             with gzip.open(file_path, "rt", encoding="utf-8") as f:
@@ -349,7 +323,7 @@ def procesar_dia(fecha_input: str):
 
                     row = _procesar_evento(event)
 
-                    # Reservoir sampling para esta hora
+                    # Reservoir sampling
                     if len(sample_hora) < SAMPLE_SIZE:
                         sample_hora.append(row)
                     else:
@@ -358,24 +332,23 @@ def procesar_dia(fecha_input: str):
                             sample_hora[j] = row
 
                     if idx % 50000 == 0:
-                        print(f"   Â· {nombre_archivo}: {idx} lÃ­neas...")
+                        print(f"   · {nombre_archivo}: {idx} líneas...")
 
         except Exception as e:
-            print(f"âš ï¸ Error leyendo/procesando {file_path}: {e}")
+            print(f"⚠️ Error leyendo/procesando {file_path}: {e}")
             if os.path.exists(file_path):
                 os.remove(file_path)
             continue
 
-        # === LIMPIEZA DE DISCO ===
+        # Eliminar archivo para ahorrar espacio
         try:
             os.remove(file_path)
-            print(f"ðŸ—‘ï¸ Archivo eliminado: {file_path}")
+            print(f"🗑️ Archivo eliminado: {file_path}")
         except Exception as e:
-            print(f"âš ï¸ No se pudo eliminar {file_path}: {e}")
-        # =========================
+            print(f"⚠️ No se pudo eliminar {file_path}: {e}")
 
         if registros_hora == 0:
-            print(f"âšª Sin registros en {nombre_archivo}")
+            print(f"⚠️ Sin registros en {nombre_archivo}")
             continue
 
         archivos_ok += 1
@@ -390,38 +363,28 @@ def procesar_dia(fecha_input: str):
 
         muestras_total.extend(sample_hora)
 
-        print(
-            f"âœ… {nombre_archivo}: {registros_hora} registros, "
-            f"{len(sample_hora)} muestras."
-        )
+        print(f"✓ {nombre_archivo}: {registros_hora} registros, {len(sample_hora)} muestras.")
 
     if archivos_ok == 0:
-        print(f"âšª Sin datos vÃ¡lidos procesados para {fecha_str}")
+        print(f"⚠️ Sin datos válidos procesados para {fecha_str}")
         return fecha_str
 
-    print(
-        f"\nâœ… Resumen {fecha_str}: {total_registros_dia} registros totales "
-        f"({archivos_ok} archivos procesados)"
-    )
-    print(f"ðŸ“Œ Total muestras generadas: {len(muestras_total)}\n")
+    print(f"\n✓ Resumen {fecha_str}: {total_registros_dia} registros totales ({archivos_ok} archivos procesados)")
+    print(f"📦 Total muestras generadas: {len(muestras_total)}\n")
 
     # ======== ACTUALIZAR gh_dias.json (ACUMULATIVO) ========
     dias_path = os.path.join(data_dir, "gh_dias.json")
     lista_dias = []
-    
+
     if os.path.exists(dias_path):
         try:
             with open(dias_path, "r", encoding="utf-8") as f:
                 content = json.load(f)
-                if isinstance(content, list):
-                    lista_dias = content
-                else:
-                    # Si era dict (formato antiguo), lo convertimos a lista
-                    lista_dias = [content]
+                lista_dias = content if isinstance(content, list) else [content]
         except Exception:
             lista_dias = []
 
-    # Eliminar si ya existe registro de este dÃ­a (para re-proceso)
+    # Eliminar si ya existe ese día
     lista_dias = [d for d in lista_dias if d.get("fecha") != fecha_str]
 
     doc_dia = {
@@ -433,12 +396,10 @@ def procesar_dia(fecha_input: str):
         "tipos_eventos": sorted(list(tipos_eventos_dia)),
     }
     lista_dias.append(doc_dia)
-    # Ordenar por fecha
     lista_dias.sort(key=lambda x: x["fecha"])
 
     with open(dias_path, "w", encoding="utf-8") as f:
         json.dump(lista_dias, f, ensure_ascii=False, indent=4)
-
 
     # ======== ACTUALIZAR gh_muestras.json (ACUMULATIVO) ========
     muestras_path = os.path.join(data_dir, "gh_muestras.json")
@@ -451,7 +412,6 @@ def procesar_dia(fecha_input: str):
         except Exception:
             lista_muestras = []
 
-    # Convertir nuevas muestras a DF para procesar columnas
     muestras_df = pd.DataFrame(muestras_total)
 
     if not muestras_df.empty:
@@ -459,12 +419,10 @@ def procesar_dia(fecha_input: str):
             muestras_df["created_at"], errors="coerce"
         )
         
-        # Formato de hora: HH:00-HH+1:00
         muestras_df["hora"] = muestras_df["created_at"].dt.hour.apply(
             lambda h: f"{h:02d}:00-{(h+1)%24:02d}:00"
         )
 
-        # Seleccionar columnas deseadas
         cols_deseadas = [
             "fecha", "dia", "hora", 
             "created_at", "type", "actor_login", "actor_id", 
@@ -472,6 +430,7 @@ def procesar_dia(fecha_input: str):
             "action", "n_commits"
         ]
         cols_finales = [c for c in cols_deseadas if c in muestras_df.columns]
+
         muestras_df = muestras_df[cols_finales]
         muestras_df["created_at"] = muestras_df["created_at"].astype(str)
         
@@ -479,25 +438,21 @@ def procesar_dia(fecha_input: str):
     else:
         nuevas_muestras = []
 
-    # Eliminar muestras anteriores de esta fecha
+    # Eliminar muestras previas del mismo día
     lista_muestras = [m for m in lista_muestras if m.get("fecha") != fecha_str]
-    
-    # Agregar nuevas
     lista_muestras.extend(nuevas_muestras)
-    
-    # (Opcional) Ordenar por fecha/hora si se desea, pero es costoso.
-    # Lo dejamos append al final.
 
     with open(muestras_path, "w", encoding="utf-8") as f:
         json.dump(lista_muestras, f, ensure_ascii=False, indent=4)
 
-    print(f"ðŸ’¾ Actualizados {dias_path} y {muestras_path} (Acumulativos)\n")
+    print(f"💾 Actualizados {dias_path} y {muestras_path} (acumulativos)\n")
 
     return fecha_str
 
 
+
 # ============================================================
-# CÃLCULO DE MÃ‰TRICAS (POR FECHA)
+# CÁLCULO DE MÉTRICAS (POR FECHA)
 # ============================================================
 
 def procesar_metricas(fecha_input: str):
@@ -510,21 +465,19 @@ def procesar_metricas(fecha_input: str):
     muestras_path = os.path.join(data_dir, "gh_muestras.json")
 
     if not os.path.exists(dias_path) or not os.path.exists(muestras_path):
-        print(f"âš ï¸ No se encontraron JSON globales en {data_dir}")
+        print(f"⚠️ No se encontraron JSON globales en {data_dir}")
         return
 
-    # Leer dÃ­a especÃ­fico de gh_dias.json
+    # Leer día específico de gh_dias.json
     with open(dias_path, "r", encoding="utf-8") as f:
         lista_dias = json.load(f)
-        # Buscar el dÃ­a
         gh_dia = next((d for d in lista_dias if d["fecha"] == fecha_str), None)
 
     if not gh_dia:
-        print(f"âš ï¸ No se encontrÃ³ informaciÃ³n para {fecha_str} en gh_dias.json")
+        print(f"⚠️ No se encontró información para {fecha_str} en gh_dias.json")
         return
 
     # Leer muestras y filtrar por fecha
-    # (Esto carga TODO en memoria, ojo con RAM si crece mucho)
     with open(muestras_path, "r", encoding="utf-8") as f:
         todas_muestras = json.load(f)
         gh_muestras = [m for m in todas_muestras if m.get("fecha") == fecha_str]
@@ -539,6 +492,7 @@ def procesar_metricas(fecha_input: str):
         actor_recurrente = (
             df["actor_login"].value_counts().idxmax() if len(df) else None
         )
+
         horas_presentes = df["created_at"].dt.hour.unique().tolist()
         horas_sin = sorted(set(range(24)) - set(horas_presentes))
     else:
@@ -566,16 +520,16 @@ def procesar_metricas(fecha_input: str):
         except Exception:
             lista_metricas = []
 
-    # Eliminar mÃ©trica anterior de esta fecha si existe
+    # Eliminar métrica anterior de esta fecha
     lista_metricas = [m for m in lista_metricas if m.get("fecha") != fecha_str]
-    
+
     lista_metricas.append(salida)
     lista_metricas.sort(key=lambda x: x["fecha"])
 
     with open(metrics_path, "w", encoding="utf-8") as f:
         json.dump(lista_metricas, f, ensure_ascii=False, indent=4)
 
-    print(f"ðŸ“Š metrics.json actualizado con datos de {fecha_str}")
+    print(f"📊 metrics.json actualizado con datos de {fecha_str}")
 
 
 # ============================================================
@@ -583,9 +537,12 @@ def procesar_metricas(fecha_input: str):
 # ============================================================
 
 def upload_outputs_to_gcs(fecha: str, bucket_name: str):
+    """
+    Sube los archivos acumulativos del proyecto a Google Cloud Storage.
+    Sobrescribe la versión previa en el bucket, ya que estos archivos
+    contienen el historial completo.
+    """
 
-    # Subimos los archivos globales acumulativos
-    # Nota: Esto sobreescribe el archivo en GCS con la versiÃ³n mÃ¡s reciente (que incluye todo el historial)
     data_dir = BASE_DATA_DIR
 
     client = storage.Client()
@@ -599,16 +556,16 @@ def upload_outputs_to_gcs(fecha: str, bucket_name: str):
 
     for file in archivos:
         local_path = os.path.join(data_dir, file)
-        # En GCS los guardamos en la raÃ­z o en una carpeta 'data' pero sin fecha, 
-        # ya que contienen todas las fechas.
+
+        # En GCS los guardamos en 'data/', sin fecha porque son acumulativos
         blob_path = f"data/{file}"
 
         if os.path.exists(local_path):
             blob = bucket.blob(blob_path)
             blob.upload_from_filename(local_path)
-            print(f"â¬†ï¸ Subido a GCS: {blob_path}")
+            print(f"⬆️ Subido a GCS: {blob_path}")
         else:
-            print(f"âš ï¸ No se encontrÃ³ {local_path} (no se sube)")
+            print(f"⚠️ No se encontró {local_path} (no se sube)")
 
 
 
